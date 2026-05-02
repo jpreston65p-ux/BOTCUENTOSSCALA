@@ -3,6 +3,7 @@ require('dotenv').config();
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const qrcode = require('qrcode-terminal');
+const QRCode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
@@ -84,19 +85,132 @@ const model = genAI.getGenerativeModel({
 });
 
 // ============================
-// 🌐 SERVIDOR WEB PARA RENDER
+// 🌐 SERVIDOR WEB PARA RENDER + QR WEB
 // ============================
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+let ultimoQR = null;
+let ultimoQRImagen = null;
+let estadoBot = 'iniciando';
+
 app.get('/', (req, res) => {
-    res.send('BOTCUENTOSSCALA funcionando correctamente ✅');
+    res.send(`
+        <html>
+            <head>
+                <title>BOTCUENTOSSCALA</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        background: #0f172a;
+                        color: white;
+                        text-align: center;
+                        padding: 30px;
+                    }
+                    .card {
+                        max-width: 540px;
+                        margin: auto;
+                        background: #111827;
+                        padding: 25px;
+                        border-radius: 18px;
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+                    }
+                    img {
+                        background: white;
+                        padding: 15px;
+                        border-radius: 12px;
+                        max-width: 100%;
+                    }
+                    .estado {
+                        color: #facc15;
+                        font-weight: bold;
+                    }
+                    .ok {
+                        color: #22c55e;
+                        font-weight: bold;
+                    }
+                    .small {
+                        font-size: 14px;
+                        color: #cbd5e1;
+                    }
+                    .btn {
+                        display: inline-block;
+                        background: #facc15;
+                        color: #111827;
+                        padding: 10px 16px;
+                        border-radius: 10px;
+                        text-decoration: none;
+                        font-weight: bold;
+                        margin-top: 12px;
+                    }
+                </style>
+                <script>
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 20000);
+                </script>
+            </head>
+            <body>
+                <div class="card">
+                    <h1>BOTCUENTOSSCALA</h1>
+                    <p>Estado: <span class="${estadoBot === 'online' ? 'ok' : 'estado'}">${estadoBot}</span></p>
+
+                    ${
+                        estadoBot === 'online'
+                        ? '<h2>✅ Bot conectado a WhatsApp</h2><p>Ya puedes probar escribiendo al número del bot desde otro WhatsApp.</p>'
+                        : ultimoQRImagen
+                            ? `<h2>Escanea este QR con WhatsApp</h2>
+                               <img src="${ultimoQRImagen}" />
+                               <p class="small">WhatsApp > Dispositivos vinculados > Vincular dispositivo</p>
+                               <p class="small">Si no funciona, actualiza esta página en 20 segundos.</p>
+                               <a class="btn" href="/qr">Abrir QR grande</a>`
+                            : '<p>Aún no se generó el QR. Espera unos segundos y actualiza esta página.</p>'
+                    }
+                </div>
+            </body>
+        </html>
+    `);
+});
+
+app.get('/qr', (req, res) => {
+    if (!ultimoQRImagen) {
+        return res.send(`
+            <html>
+                <body style="text-align:center;font-family:Arial;padding:30px;">
+                    <h2>QR todavía no generado</h2>
+                    <p>Espera unos segundos y actualiza.</p>
+                    <script>
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 10000);
+                    </script>
+                </body>
+            </html>
+        `);
+    }
+
+    res.send(`
+        <html>
+            <head>
+                <title>QR BOTCUENTOSSCALA</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="text-align:center;font-family:Arial;padding:30px;background:#f8fafc;">
+                <h2>Escanea este QR</h2>
+                <img src="${ultimoQRImagen}" style="width:420px;max-width:95%;background:white;padding:15px;border-radius:12px;"/>
+                <p>WhatsApp > Dispositivos vinculados > Vincular dispositivo</p>
+                <p>Si no funciona, actualiza esta página.</p>
+            </body>
+        </html>
+    `);
 });
 
 app.get('/health', (req, res) => {
     res.json({
-        status: 'online',
+        status: estadoBot,
         bot: 'BOTCUENTOSSCALA',
+        hasQR: Boolean(ultimoQR),
         time: new Date().toISOString(),
     });
 });
@@ -944,16 +1058,33 @@ También puedes escribir *minipack* si quieres ver una muestra primero.`,
 // ============================
 // 📱 EVENTOS DE WHATSAPP
 // ============================
-client.on('qr', (qr) => {
-    log.info('Escanea el QR con WhatsApp');
-    qrcode.generate(qr, { small: true });
+client.on('qr', async (qr) => {
+    try {
+        estadoBot = 'esperando escaneo QR';
+        ultimoQR = qr;
+        ultimoQRImagen = await QRCode.toDataURL(qr, {
+            width: 520,
+            margin: 2,
+        });
+
+        log.info('QR generado. Abre la URL de Render para escanearlo.');
+        log.info('Abre /qr para ver el QR grande.');
+        qrcode.generate(qr, { small: false });
+    } catch (error) {
+        log.error(`Error generando QR web: ${error.message}`);
+    }
 });
 
 client.on('authenticated', () => {
+    estadoBot = 'autenticado';
     log.success('Sesión autenticada correctamente');
 });
 
 client.on('ready', () => {
+    estadoBot = 'online';
+    ultimoQR = null;
+    ultimoQRImagen = null;
+
     log.success('🚀 BOTCUENTOSSCALA ONLINE');
 
     const rutaMiniPack = obtenerRutaMiniPack();
@@ -967,10 +1098,12 @@ client.on('ready', () => {
 });
 
 client.on('auth_failure', (message) => {
+    estadoBot = 'fallo de autenticación';
     log.error(`Fallo de autenticación: ${message}`);
 });
 
 client.on('disconnected', (reason) => {
+    estadoBot = 'desconectado';
     log.warn(`Bot desconectado: ${reason}`);
 });
 
