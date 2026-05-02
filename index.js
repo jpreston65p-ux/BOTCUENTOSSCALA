@@ -106,16 +106,92 @@ app.listen(PORT, () => {
 });
 
 // ============================
-// ⚙️ WHATSAPP
+// ⚙️ WHATSAPP / CHROME PARA RENDER
 // ============================
-let chromePath = null;
+function buscarChromeEnCarpeta(carpetaBase) {
+    try {
+        if (!fs.existsSync(carpetaBase)) return null;
 
-try {
-    chromePath = puppeteer.executablePath();
-    console.log(`✅ Chrome detectado en: ${chromePath}`);
-} catch (error) {
-    console.error(`❌ No se pudo detectar Chrome con Puppeteer: ${error.message}`);
+        const elementos = fs.readdirSync(carpetaBase, { withFileTypes: true });
+
+        for (const elemento of elementos) {
+            const rutaCompleta = path.join(carpetaBase, elemento.name);
+
+            if (elemento.isDirectory()) {
+                const encontrado = buscarChromeEnCarpeta(rutaCompleta);
+                if (encontrado) return encontrado;
+            }
+
+            if (
+                elemento.isFile() &&
+                (
+                    elemento.name === 'chrome' ||
+                    elemento.name === 'chrome.exe' ||
+                    elemento.name === 'chromium' ||
+                    elemento.name === 'chromium-browser'
+                )
+            ) {
+                return rutaCompleta;
+            }
+        }
+
+        return null;
+    } catch (error) {
+        console.error(`❌ Error buscando Chrome: ${error.message}`);
+        return null;
+    }
 }
+
+function obtenerChromePath() {
+    const posiblesRutas = [];
+
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        posiblesRutas.push(process.env.PUPPETEER_EXECUTABLE_PATH);
+    }
+
+    try {
+        const rutaPuppeteer = puppeteer.executablePath();
+        posiblesRutas.push(rutaPuppeteer);
+    } catch (error) {
+        console.warn(`⚠️ Puppeteer no dio ruta automática: ${error.message}`);
+    }
+
+    posiblesRutas.push('/usr/bin/google-chrome');
+    posiblesRutas.push('/usr/bin/google-chrome-stable');
+    posiblesRutas.push('/usr/bin/chromium');
+    posiblesRutas.push('/usr/bin/chromium-browser');
+
+    for (const ruta of posiblesRutas) {
+        if (ruta && fs.existsSync(ruta)) {
+            console.log(`✅ Chrome encontrado en: ${ruta}`);
+            return ruta;
+        } else if (ruta) {
+            console.warn(`⚠️ Ruta probada pero no existe: ${ruta}`);
+        }
+    }
+
+    const carpetasParaBuscar = [
+        path.join(__dirname, '.cache', 'puppeteer'),
+        '/opt/render/project/src/.cache/puppeteer',
+        '/opt/render/.cache/puppeteer',
+        '/opt/render/project/.cache/puppeteer',
+    ];
+
+    for (const carpeta of carpetasParaBuscar) {
+        console.log(`🔎 Buscando Chrome dentro de: ${carpeta}`);
+        const encontrado = buscarChromeEnCarpeta(carpeta);
+
+        if (encontrado && fs.existsSync(encontrado)) {
+            console.log(`✅ Chrome encontrado manualmente en: ${encontrado}`);
+            return encontrado;
+        }
+    }
+
+    console.warn('⚠️ No se encontró Chrome. Render puede fallar al iniciar WhatsApp Web.');
+    return undefined;
+}
+
+const chromePath = obtenerChromePath();
 
 const client = new Client({
     authStrategy: new LocalAuth({
@@ -140,6 +216,8 @@ const client = new Client({
             '--metrics-recording-only',
             '--mute-audio',
             '--hide-scrollbars',
+            '--disable-features=site-per-process',
+            '--disable-web-security',
         ],
     },
 });
@@ -920,7 +998,6 @@ client.on('message', async (msg) => {
 
         log.info(`Mensaje de ${userId}: ${texto}`);
 
-        // 0. MiniPack primero, antes del flujo y antes de Gemini
         if (quiereMiniPack(texto)) {
             await enviarMensajes(userId, [
                 MENSAJES.miniPackIntro,
@@ -930,7 +1007,6 @@ client.on('message', async (msg) => {
             return;
         }
 
-        // 1. Flujo principal
         const respuestasFlujo = await manejarFlujo(userId, texto);
 
         if (respuestasFlujo && respuestasFlujo.length > 0) {
@@ -938,7 +1014,6 @@ client.on('message', async (msg) => {
             return;
         }
 
-        // 2. IA para conversaciones vagas, normales o avanzadas
         let respuestaIA = null;
 
         try {
