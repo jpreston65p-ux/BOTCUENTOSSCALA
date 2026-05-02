@@ -5,7 +5,8 @@
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "postinstall": "npx puppeteer browsers install chrome"
   },
   "keywords": [],
   "author": "",
@@ -14,6 +15,7 @@
     "@google/generative-ai": "^0.24.1",
     "dotenv": "^16.4.7",
     "express": "^4.18.2",
+    "puppeteer": "^24.31.0",
     "qrcode-terminal": "^0.12.0",
     "whatsapp-web.js": "^1.26.0"
   }

@@ -6,6 +6,7 @@ const qrcode = require('qrcode-terminal');
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
+const puppeteer = require('puppeteer');
 
 // ============================
 // 🔐 CONFIGURACIÓN
@@ -89,13 +90,13 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => {
-    res.send('Bot Scala funcionando correctamente ✅');
+    res.send('BOTCUENTOSSCALA funcionando correctamente ✅');
 });
 
 app.get('/health', (req, res) => {
     res.json({
         status: 'online',
-        bot: 'Scala',
+        bot: 'BOTCUENTOSSCALA',
         time: new Date().toISOString(),
     });
 });
@@ -107,12 +108,22 @@ app.listen(PORT, () => {
 // ============================
 // ⚙️ WHATSAPP
 // ============================
+let chromePath = null;
+
+try {
+    chromePath = puppeteer.executablePath();
+    console.log(`✅ Chrome detectado en: ${chromePath}`);
+} catch (error) {
+    console.error(`❌ No se pudo detectar Chrome con Puppeteer: ${error.message}`);
+}
+
 const client = new Client({
     authStrategy: new LocalAuth({
         dataPath: CONFIG.SESSION_PATH,
     }),
     puppeteer: {
         headless: true,
+        executablePath: chromePath,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -121,6 +132,14 @@ const client = new Client({
             '--no-first-run',
             '--no-zygote',
             '--disable-gpu',
+            '--single-process',
+            '--disable-extensions',
+            '--disable-background-networking',
+            '--disable-default-apps',
+            '--disable-sync',
+            '--metrics-recording-only',
+            '--mute-audio',
+            '--hide-scrollbars',
         ],
     },
 });
@@ -857,7 +876,7 @@ client.on('authenticated', () => {
 });
 
 client.on('ready', () => {
-    log.success('🚀 BOT SCALA ONLINE');
+    log.success('🚀 BOTCUENTOSSCALA ONLINE');
 
     const rutaMiniPack = obtenerRutaMiniPack();
 
@@ -951,7 +970,7 @@ process.on('uncaughtException', (error) => {
 });
 
 process.on('SIGINT', async () => {
-    log.warn('Cerrando bot Scala...');
+    log.warn('Cerrando BOTCUENTOSSCALA...');
     await client.destroy();
     process.exit(0);
 });
